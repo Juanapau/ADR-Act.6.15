@@ -368,7 +368,7 @@
         document.getElementById('exerciseDate').valueAsDate = new Date();
 
         // Enviar respuesta del estudiante
-        async function submitExercise() {
+        function submitExercise() {
             const studentName = document.getElementById('studentName').value.trim();
             const exerciseDate = document.getElementById('exerciseDate').value;
             const errorsFound = document.getElementById('errorsFound').value.trim();
@@ -383,7 +383,7 @@
                 return;
             }
 
-            // Guardar datos del estudiante en storage persistente
+            // Guardar datos del estudiante
             const studentData = {
                 name: studentName,
                 date: exerciseDate,
@@ -392,9 +392,23 @@
             };
 
             try {
-                // Guardar en storage compartido
-                const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
-                await window.storage.set(storageKey, JSON.stringify(studentData), true);
+                // Obtener todos los estudiantes guardados
+                let allStudents = [];
+                const saved = localStorage.getItem('allStudentsData');
+                if (saved) {
+                    allStudents = JSON.parse(saved);
+                }
+
+                // Verificar si el estudiante ya existe y actualizar
+                const existingIndex = allStudents.findIndex(s => s.name.toLowerCase() === studentName.toLowerCase());
+                if (existingIndex !== -1) {
+                    allStudents[existingIndex] = studentData;
+                } else {
+                    allStudents.push(studentData);
+                }
+
+                // Guardar todos los estudiantes
+                localStorage.setItem('allStudentsData', JSON.stringify(allStudents));
                 
                 alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
                 
@@ -409,10 +423,9 @@
         }
 
         // Generar PDF del estudiante
-        async function generateStudentPDF() {
+        function generateStudentPDF() {
             const { jsPDF } = window.jspdf;
             const studentName = document.getElementById('studentName').value.trim();
-            const exerciseDate = document.getElementById('exerciseDate').value;
 
             if (!studentName) {
                 alert('Por favor, escribe tu nombre para descargar tu PDF.');
@@ -420,16 +433,22 @@
             }
 
             try {
-                // Buscar los datos del estudiante en storage
-                const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
-                const result = await window.storage.get(storageKey, true);
+                // Buscar los datos del estudiante
+                const saved = localStorage.getItem('allStudentsData');
+                if (!saved) {
+                    alert('⚠️ No se encontraron datos. Primero debes enviar tu respuesta.');
+                    return;
+                }
+
+                const allStudents = JSON.parse(saved);
+                const studentData = allStudents.find(s => s.name.toLowerCase() === studentName.toLowerCase());
                 
-                if (!result) {
+                if (!studentData) {
                     alert('⚠️ No se encontraron datos para este estudiante. Primero debes enviar tu respuesta.');
                     return;
                 }
 
-                const studentData = JSON.parse(result.value);
+                const exerciseDate = studentData.date;
                 const errorsFound = studentData.errors;
 
             // Crear PDF
@@ -484,7 +503,7 @@
         }
 
         // Generar PDF del maestro con todos los estudiantes
-        async function generateTeacherPDF() {
+        function generateTeacherPDF() {
             // Solicitar PIN
             const pin = prompt('🔒 Ingresa el PIN de maestro para acceder al reporte:');
             
@@ -494,26 +513,15 @@
             }
 
             try {
-                // Obtener todos los estudiantes del storage
-                const result = await window.storage.list('student_', true);
+                // Obtener todos los estudiantes
+                const saved = localStorage.getItem('allStudentsData');
                 
-                if (!result || !result.keys || result.keys.length === 0) {
+                if (!saved) {
                     alert('No hay estudiantes registrados aún.');
                     return;
                 }
 
-                // Cargar datos de todos los estudiantes
-                const allStudents = [];
-                for (const key of result.keys) {
-                    try {
-                        const studentResult = await window.storage.get(key, true);
-                        if (studentResult) {
-                            allStudents.push(JSON.parse(studentResult.value));
-                        }
-                    } catch (e) {
-                        console.error('Error cargando estudiante:', e);
-                    }
-                }
+                const allStudents = JSON.parse(saved);
 
                 if (allStudents.length === 0) {
                     alert('No hay estudiantes registrados aún.');
