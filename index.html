@@ -348,9 +348,6 @@
     </div>
 
     <script>
-        // Establecer fecha actual por defecto
-        document.getElementById('exerciseDate').valueAsDate = new Date();
-
         // Almacenar datos de estudiantes
         let studentsData = [];
 
@@ -367,8 +364,11 @@
             localStorage.setItem('studentsData', JSON.stringify(studentsData));
         }
 
+        // Establecer fecha actual por defecto
+        document.getElementById('exerciseDate').valueAsDate = new Date();
+
         // Enviar respuesta del estudiante
-        function submitExercise() {
+        async function submitExercise() {
             const studentName = document.getElementById('studentName').value.trim();
             const exerciseDate = document.getElementById('exerciseDate').value;
             const errorsFound = document.getElementById('errorsFound').value.trim();
@@ -383,7 +383,7 @@
                 return;
             }
 
-            // Guardar datos del estudiante
+            // Guardar datos del estudiante en storage persistente
             const studentData = {
                 name: studentName,
                 date: exerciseDate,
@@ -391,41 +391,46 @@
                 timestamp: new Date().toISOString()
             };
 
-            // Verificar si el estudiante ya existe y actualizar
-            const existingIndex = studentsData.findIndex(s => s.name.toLowerCase() === studentName.toLowerCase());
-            if (existingIndex !== -1) {
-                studentsData[existingIndex] = studentData;
-                alert('✅ ¡Tu respuesta ha sido actualizada exitosamente!');
-            } else {
-                studentsData.push(studentData);
+            try {
+                // Guardar en storage compartido
+                const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
+                await window.storage.set(storageKey, JSON.stringify(studentData), true);
+                
                 alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
+                
+                // Limpiar los campos
+                document.getElementById('studentName').value = '';
+                document.getElementById('errorsFound').value = '';
+                
+            } catch (error) {
+                console.error('Error al guardar:', error);
+                alert('⚠️ Hubo un error al enviar tu respuesta. Por favor intenta de nuevo.');
             }
-            saveData();
         }
 
         // Generar PDF del estudiante
-        function generateStudentPDF() {
+        async function generateStudentPDF() {
             const { jsPDF } = window.jspdf;
             const studentName = document.getElementById('studentName').value.trim();
             const exerciseDate = document.getElementById('exerciseDate').value;
-            const errorsFound = document.getElementById('errorsFound').value.trim();
 
             if (!studentName) {
-                alert('Por favor, escribe tu nombre.');
+                alert('Por favor, escribe tu nombre para descargar tu PDF.');
                 return;
             }
 
-            if (!errorsFound) {
-                alert('Por favor, escribe al menos un error identificado.');
-                return;
-            }
+            try {
+                // Buscar los datos del estudiante en storage
+                const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
+                const result = await window.storage.get(storageKey, true);
+                
+                if (!result) {
+                    alert('⚠️ No se encontraron datos para este estudiante. Primero debes enviar tu respuesta.');
+                    return;
+                }
 
-            // Verificar si el estudiante ha enviado su respuesta
-            const studentExists = studentsData.some(s => s.name.toLowerCase() === studentName.toLowerCase());
-            if (!studentExists) {
-                alert('⚠️ Primero debes enviar tu respuesta antes de descargar el PDF.');
-                return;
-            }
+                const studentData = JSON.parse(result.value);
+                const errorsFound = studentData.errors;
 
             // Crear PDF
             const doc = new jsPDF();
@@ -471,16 +476,49 @@
 
             doc.save(`Ejercicio_${studentName.replace(/\s+/g, '_')}.pdf`);
             alert('¡PDF generado exitosamente!');
+            
+            } catch (error) {
+                console.error('Error al generar PDF:', error);
+                alert('⚠️ Hubo un error al generar el PDF. Por favor intenta de nuevo.');
+            }
         }
 
         // Generar PDF del maestro con todos los estudiantes
-        function generateTeacherPDF() {
-            loadData();
-
-            if (studentsData.length === 0) {
-                alert('No hay estudiantes registrados aún.');
+        async function generateTeacherPDF() {
+            // Solicitar PIN
+            const pin = prompt('🔒 Ingresa el PIN de maestro para acceder al reporte:');
+            
+            if (pin !== '1070') {
+                alert('❌ PIN incorrecto. Acceso denegado.');
                 return;
             }
+
+            try {
+                // Obtener todos los estudiantes del storage
+                const result = await window.storage.list('student_', true);
+                
+                if (!result || !result.keys || result.keys.length === 0) {
+                    alert('No hay estudiantes registrados aún.');
+                    return;
+                }
+
+                // Cargar datos de todos los estudiantes
+                const allStudents = [];
+                for (const key of result.keys) {
+                    try {
+                        const studentResult = await window.storage.get(key, true);
+                        if (studentResult) {
+                            allStudents.push(JSON.parse(studentResult.value));
+                        }
+                    } catch (e) {
+                        console.error('Error cargando estudiante:', e);
+                    }
+                }
+
+                if (allStudents.length === 0) {
+                    alert('No hay estudiantes registrados aún.');
+                    return;
+                }
 
             const { jsPDF } = window.jspdf;
             const doc = new jsPDF();
@@ -496,11 +534,11 @@
             doc.setFontSize(10);
             doc.setFont(undefined, 'normal');
             doc.text(`Generado el: ${new Date().toLocaleString('es-ES')}`, pageWidth / 2, y, { align: 'center' });
-            doc.text(`Total de estudiantes: ${studentsData.length}`, pageWidth / 2, y + 6, { align: 'center' });
+            doc.text(`Total de estudiantes: ${allStudents.length}`, pageWidth / 2, y + 6, { align: 'center' });
             
             y += 20;
 
-            studentsData.forEach((student, index) => {
+            allStudents.forEach((student, index) => {
                 if (y > 250) {
                     doc.addPage();
                     y = 20;
@@ -544,10 +582,12 @@
 
             doc.save(`Reporte_Todos_los_Estudiantes_${new Date().toLocaleDateString('es-ES').replace(/\//g, '-')}.pdf`);
             alert('¡Reporte generado exitosamente!');
+            
+            } catch (error) {
+                console.error('Error al generar reporte:', error);
+                alert('⚠️ Hubo un error al generar el reporte. Por favor intenta de nuevo.');
+            }
         }
-
-        // Cargar datos al iniciar
-        loadData();
     </script>
 </body>
 </html>
