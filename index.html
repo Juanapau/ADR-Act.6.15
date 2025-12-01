@@ -195,6 +195,18 @@
             box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
         }
 
+        .btn-submit {
+            background: linear-gradient(135deg, #4caf50 0%, #45a049 100%);
+            color: white;
+            padding: 15px 40px;
+            font-size: 18px;
+        }
+
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
+        }
+
         .instruction {
             background: #e8f5e9;
             border-left: 4px solid #4caf50;
@@ -286,7 +298,7 @@
                             <td>Muy bien</td>
                         </tr>
                         <tr>
-                            <td><em>(Nombre faltante)</em></td>
+                            <td></td>
                             <td>78</td>
                             <td>Necesita mejorar</td>
                         </tr>
@@ -317,6 +329,12 @@
             <h2>✍️ Errores identificados</h2>
             <label for="errorsFound" style="margin-bottom: 10px; display: block;">Escribe cada error que encuentres (uno por línea):</label>
             <textarea id="errorsFound" placeholder="Ejemplo:&#10;1. Las fechas están en formatos diferentes e inconsistentes&#10;2. Falta el nombre completo del responsable&#10;3. ..."></textarea>
+            
+            <div style="text-align: center; margin-top: 20px;">
+                <button class="btn-submit" onclick="submitExercise()">
+                    ✅ Enviar Respuesta
+                </button>
+            </div>
         </div>
 
         <div class="button-group">
@@ -349,9 +367,8 @@
             localStorage.setItem('studentsData', JSON.stringify(studentsData));
         }
 
-        // Generar PDF del estudiante
-        function generateStudentPDF() {
-            const { jsPDF } = window.jspdf;
+        // Enviar respuesta del estudiante
+        function submitExercise() {
             const studentName = document.getElementById('studentName').value.trim();
             const exerciseDate = document.getElementById('exerciseDate').value;
             const errorsFound = document.getElementById('errorsFound').value.trim();
@@ -378,10 +395,37 @@
             const existingIndex = studentsData.findIndex(s => s.name.toLowerCase() === studentName.toLowerCase());
             if (existingIndex !== -1) {
                 studentsData[existingIndex] = studentData;
+                alert('✅ ¡Tu respuesta ha sido actualizada exitosamente!');
             } else {
                 studentsData.push(studentData);
+                alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
             }
             saveData();
+        }
+
+        // Generar PDF del estudiante
+        function generateStudentPDF() {
+            const { jsPDF } = window.jspdf;
+            const studentName = document.getElementById('studentName').value.trim();
+            const exerciseDate = document.getElementById('exerciseDate').value;
+            const errorsFound = document.getElementById('errorsFound').value.trim();
+
+            if (!studentName) {
+                alert('Por favor, escribe tu nombre.');
+                return;
+            }
+
+            if (!errorsFound) {
+                alert('Por favor, escribe al menos un error identificado.');
+                return;
+            }
+
+            // Verificar si el estudiante ha enviado su respuesta
+            const studentExists = studentsData.some(s => s.name.toLowerCase() === studentName.toLowerCase());
+            if (!studentExists) {
+                alert('⚠️ Primero debes enviar tu respuesta antes de descargar el PDF.');
+                return;
+            }
 
             // Crear PDF
             const doc = new jsPDF();
