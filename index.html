@@ -366,28 +366,15 @@
     </div>
 
     <script>
-        // Almacenar datos de estudiantes
-        let studentsData = [];
-
-        // Cargar datos guardados
-        function loadData() {
-            const saved = localStorage.getItem('studentsData');
-            if (saved) {
-                studentsData = JSON.parse(saved);
-            }
-        }
-
-        // Guardar datos
-        function saveData() {
-            localStorage.setItem('studentsData', JSON.stringify(studentsData));
-        }
-
         // Establecer fecha actual por defecto
         const today = new Date();
         const year = today.getFullYear();
         const month = String(today.getMonth() + 1).padStart(2, '0');
         const day = String(today.getDate()).padStart(2, '0');
         document.getElementById('exerciseDate').value = `${year}-${month}-${day}`;
+
+        // Verificar si window.storage está disponible
+        const hasStorage = typeof window.storage !== 'undefined';
 
         // Enviar respuesta del estudiante
         async function submitExercise() {
@@ -405,7 +392,6 @@
                 return;
             }
 
-            // Guardar datos del estudiante
             const studentData = {
                 name: studentName,
                 date: exerciseDate,
@@ -414,18 +400,34 @@
             };
 
             try {
-                // Crear clave única para el estudiante
-                const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
-                
-                // Guardar en storage compartido (shared: true permite acceso desde cualquier dispositivo)
-                const result = await window.storage.set(storageKey, JSON.stringify(studentData), true);
-                
-                if (result) {
-                    alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
+                if (hasStorage) {
+                    // Usar window.storage (Claude)
+                    const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
+                    const result = await window.storage.set(storageKey, JSON.stringify(studentData), true);
+                    
+                    if (result) {
+                        alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
+                    } else {
+                        alert('⚠️ Hubo un error al enviar tu respuesta. Por favor intenta de nuevo.');
+                    }
                 } else {
-                    alert('⚠️ Hubo un error al enviar tu respuesta. Por favor intenta de nuevo.');
+                    // Fallback a localStorage
+                    let allStudents = [];
+                    const saved = localStorage.getItem('allStudentsData');
+                    if (saved) {
+                        allStudents = JSON.parse(saved);
+                    }
+
+                    const existingIndex = allStudents.findIndex(s => s.name.toLowerCase() === studentName.toLowerCase());
+                    if (existingIndex !== -1) {
+                        allStudents[existingIndex] = studentData;
+                    } else {
+                        allStudents.push(studentData);
+                    }
+
+                    localStorage.setItem('allStudentsData', JSON.stringify(allStudents));
+                    alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
                 }
-                
             } catch (error) {
                 console.error('Error al guardar:', error);
                 alert('⚠️ Hubo un error al enviar tu respuesta. Por favor intenta de nuevo.');
@@ -443,64 +445,77 @@
             }
 
             try {
-                // Buscar los datos del estudiante en storage compartido
-                const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
-                const result = await window.storage.get(storageKey, true);
-                
-                if (!result || !result.value) {
+                let studentData = null;
+
+                if (hasStorage) {
+                    // Usar window.storage
+                    const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
+                    const result = await window.storage.get(storageKey, true);
+                    
+                    if (result && result.value) {
+                        studentData = JSON.parse(result.value);
+                    }
+                } else {
+                    // Usar localStorage
+                    const saved = localStorage.getItem('allStudentsData');
+                    if (saved) {
+                        const allStudents = JSON.parse(saved);
+                        studentData = allStudents.find(s => s.name.toLowerCase() === studentName.toLowerCase());
+                    }
+                }
+
+                if (!studentData) {
                     alert('⚠️ No se encontraron datos para este estudiante. Primero debes enviar tu respuesta.');
                     return;
                 }
 
-                const studentData = JSON.parse(result.value);
                 const exerciseDate = studentData.date;
                 const errorsFound = studentData.errors;
 
-            // Crear PDF
-            const doc = new jsPDF();
-            const pageWidth = doc.internal.pageSize.getWidth();
-            let y = 20;
+                // Crear PDF
+                const doc = new jsPDF();
+                const pageWidth = doc.internal.pageSize.getWidth();
+                let y = 20;
 
-            // Título
-            doc.setFontSize(18);
-            doc.setFont(undefined, 'bold');
-            doc.text('Ejercicio: Identificación de Errores en Reportes', pageWidth / 2, y, { align: 'center' });
-            
-            y += 10;
-            doc.setFontSize(12);
-            doc.setFont(undefined, 'normal');
-            doc.text('Manejo Correcto de la Información', pageWidth / 2, y, { align: 'center' });
-            
-            y += 15;
-            doc.setFontSize(11);
-            doc.text(`Estudiante: ${studentName}`, 20, y);
-            y += 8;
-            doc.text(`Fecha: ${new Date(exerciseDate).toLocaleDateString('es-ES')}`, 20, y);
-            
-            y += 15;
-            doc.setFont(undefined, 'bold');
-            doc.text('Errores Identificados:', 20, y);
-            y += 8;
-            
-            doc.setFont(undefined, 'normal');
-            const errors = errorsFound.split('\n');
-            errors.forEach(error => {
-                if (error.trim()) {
-                    const lines = doc.splitTextToSize(error, pageWidth - 40);
-                    lines.forEach(line => {
-                        if (y > 270) {
-                            doc.addPage();
-                            y = 20;
-                        }
-                        doc.text(line, 20, y);
-                        y += 7;
-                    });
-                }
-            });
+                doc.setFontSize(18);
+                doc.setFont(undefined, 'bold');
+                doc.text('Ejercicio: Identificación de Errores en Reportes', pageWidth / 2, y, { align: 'center' });
+                
+                y += 10;
+                doc.setFontSize(12);
+                doc.setFont(undefined, 'normal');
+                doc.text('Manejo Correcto de la Información', pageWidth / 2, y, { align: 'center' });
+                
+                y += 15;
+                doc.setFontSize(11);
+                doc.text(`Estudiante: ${studentName}`, 20, y);
+                y += 8;
+                doc.text(`Fecha: ${new Date(exerciseDate).toLocaleDateString('es-ES')}`, 20, y);
+                
+                y += 15;
+                doc.setFont(undefined, 'bold');
+                doc.text('Errores Identificados:', 20, y);
+                y += 8;
+                
+                doc.setFont(undefined, 'normal');
+                const errors = errorsFound.split('\n');
+                errors.forEach(error => {
+                    if (error.trim()) {
+                        const lines = doc.splitTextToSize(error, pageWidth - 40);
+                        lines.forEach(line => {
+                            if (y > 270) {
+                                doc.addPage();
+                                y = 20;
+                            }
+                            doc.text(line, 20, y);
+                            y += 7;
+                        });
+                    }
+                });
 
-            doc.save(`Ejercicio_${studentName.replace(/\s+/g, '_')}.pdf`);
-            alert('¡PDF generado exitosamente!');
-            
+                doc.save(`Ejercicio_${studentName.replace(/\s+/g, '_')}.pdf`);
+                alert('¡PDF generado exitosamente!');
+                
             } catch (error) {
                 console.error('Error al generar PDF:', error);
                 alert('⚠️ Hubo un error al generar el PDF. Por favor intenta de nuevo.');
@@ -509,7 +524,6 @@
 
         // Generar PDF del maestro con todos los estudiantes
         async function generateTeacherPDF() {
-            // Solicitar PIN
             const pin = prompt('🔒 Ingresa el PIN de maestro para acceder al reporte:');
             
             if (pin !== '1070') {
@@ -518,24 +532,29 @@
             }
 
             try {
-                // Obtener lista de todos los estudiantes del storage compartido
-                const result = await window.storage.list('student_', true);
-                
-                if (!result || !result.keys || result.keys.length === 0) {
-                    alert('No hay estudiantes registrados aún.');
-                    return;
-                }
+                let allStudents = [];
 
-                // Cargar datos de todos los estudiantes
-                const allStudents = [];
-                for (const key of result.keys) {
-                    try {
-                        const studentResult = await window.storage.get(key, true);
-                        if (studentResult && studentResult.value) {
-                            allStudents.push(JSON.parse(studentResult.value));
+                if (hasStorage) {
+                    // Usar window.storage
+                    const result = await window.storage.list('student_', true);
+                    
+                    if (result && result.keys && result.keys.length > 0) {
+                        for (const key of result.keys) {
+                            try {
+                                const studentResult = await window.storage.get(key, true);
+                                if (studentResult && studentResult.value) {
+                                    allStudents.push(JSON.parse(studentResult.value));
+                                }
+                            } catch (e) {
+                                console.error('Error cargando estudiante:', e);
+                            }
                         }
-                    } catch (e) {
-                        console.error('Error cargando estudiante:', e);
+                    }
+                } else {
+                    // Usar localStorage
+                    const saved = localStorage.getItem('allStudentsData');
+                    if (saved) {
+                        allStudents = JSON.parse(saved);
                     }
                 }
 
@@ -544,78 +563,75 @@
                     return;
                 }
 
-            const { jsPDF } = window.jspdf;
-            const doc = new jsPDF();
-            const pageWidth = doc.internal.pageSize.getWidth();
-            let y = 20;
+                const { jsPDF } = window.jspdf;
+                const doc = new jsPDF();
+                const pageWidth = doc.internal.pageSize.getWidth();
+                let y = 20;
 
-            // Título
-            doc.setFontSize(16);
-            doc.setFont(undefined, 'bold');
-            doc.text('Reporte de Resultados - Todos los Estudiantes', pageWidth / 2, y, { align: 'center' });
-            
-            y += 8;
-            doc.setFontSize(10);
-            doc.setFont(undefined, 'normal');
-            doc.text(`Generado el: ${new Date().toLocaleString('es-ES')}`, pageWidth / 2, y, { align: 'center' });
-            doc.text(`Total de estudiantes: ${allStudents.length}`, pageWidth / 2, y + 6, { align: 'center' });
-            
-            y += 20;
-
-            allStudents.forEach((student, index) => {
-                if (y > 250) {
-                    doc.addPage();
-                    y = 20;
-                }
-
-                // Nombre del estudiante
-                doc.setFontSize(12);
+                doc.setFontSize(16);
                 doc.setFont(undefined, 'bold');
-                doc.text(`${index + 1}. ${student.name}`, 20, y);
-                y += 7;
-
+                doc.text('Reporte de Resultados - Todos los Estudiantes', pageWidth / 2, y, { align: 'center' });
+                
+                y += 8;
                 doc.setFontSize(10);
                 doc.setFont(undefined, 'normal');
-                doc.text(`Fecha: ${new Date(student.date).toLocaleDateString('es-ES')}`, 25, y);
-                y += 6;
+                doc.text(`Generado el: ${new Date().toLocaleString('es-ES')}`, pageWidth / 2, y, { align: 'center' });
+                doc.text(`Total de estudiantes: ${allStudents.length}`, pageWidth / 2, y + 6, { align: 'center' });
+                
+                y += 20;
 
-                doc.setFont(undefined, 'italic');
-                doc.text('Errores identificados:', 25, y);
-                y += 6;
-
-                doc.setFont(undefined, 'normal');
-                const errors = student.errors.split('\n');
-                errors.forEach(error => {
-                    if (error.trim()) {
-                        const lines = doc.splitTextToSize(error, pageWidth - 50);
-                        lines.forEach(line => {
-                            if (y > 270) {
-                                doc.addPage();
-                                y = 20;
-                            }
-                            doc.text(`• ${line}`, 30, y);
-                            y += 5;
-                        });
+                allStudents.forEach((student, index) => {
+                    if (y > 250) {
+                        doc.addPage();
+                        y = 20;
                     }
+
+                    doc.setFontSize(12);
+                    doc.setFont(undefined, 'bold');
+                    doc.text(`${index + 1}. ${student.name}`, 20, y);
+                    y += 7;
+
+                    doc.setFontSize(10);
+                    doc.setFont(undefined, 'normal');
+                    doc.text(`Fecha: ${new Date(student.date).toLocaleDateString('es-ES')}`, 25, y);
+                    y += 6;
+
+                    doc.setFont(undefined, 'italic');
+                    doc.text('Errores identificados:', 25, y);
+                    y += 6;
+
+                    doc.setFont(undefined, 'normal');
+                    const errors = student.errors.split('\n');
+                    errors.forEach(error => {
+                        if (error.trim()) {
+                            const lines = doc.splitTextToSize(error, pageWidth - 50);
+                            lines.forEach(line => {
+                                if (y > 270) {
+                                    doc.addPage();
+                                    y = 20;
+                                }
+                                doc.text(`• ${line}`, 30, y);
+                                y += 5;
+                            });
+                        }
+                    });
+
+                    y += 8;
+                    doc.line(20, y, pageWidth - 20, y);
+                    y += 8;
                 });
 
-                y += 8;
-                doc.line(20, y, pageWidth - 20, y);
-                y += 8;
-            });
-
-            doc.save(`Reporte_Todos_los_Estudiantes_${new Date().toLocaleDateString('es-ES').replace(/\//g, '-')}.pdf`);
-            alert('¡Reporte generado exitosamente!');
-            
+                doc.save(`Reporte_Todos_los_Estudiantes_${new Date().toLocaleDateString('es-ES').replace(/\//g, '-')}.pdf`);
+                alert('¡Reporte generado exitosamente!');
+                
             } catch (error) {
                 console.error('Error al generar reporte:', error);
                 alert('⚠️ Hubo un error al generar el reporte. Por favor intenta de nuevo.');
             }
         }
 
-        // Limpiar todos los datos almacenados (solo para maestro)
+        // Limpiar todos los datos almacenados
         async function clearAllData() {
-            // Solicitar PIN
             const pin = prompt('🔒 Ingresa el PIN de maestro para limpiar todos los datos:');
             
             if (pin !== '1070') {
@@ -630,26 +646,37 @@
             }
 
             try {
-                // Obtener lista de todos los estudiantes
-                const result = await window.storage.list('student_', true);
-                
-                if (!result || !result.keys || result.keys.length === 0) {
-                    alert('No hay datos para eliminar.');
-                    return;
-                }
-
-                // Eliminar cada estudiante
                 let deletedCount = 0;
-                for (const key of result.keys) {
-                    try {
-                        await window.storage.delete(key, true);
-                        deletedCount++;
-                    } catch (e) {
-                        console.error('Error eliminando:', e);
+
+                if (hasStorage) {
+                    // Usar window.storage
+                    const result = await window.storage.list('student_', true);
+                    
+                    if (result && result.keys && result.keys.length > 0) {
+                        for (const key of result.keys) {
+                            try {
+                                await window.storage.delete(key, true);
+                                deletedCount++;
+                            } catch (e) {
+                                console.error('Error eliminando:', e);
+                            }
+                        }
+                    }
+                } else {
+                    // Usar localStorage
+                    const saved = localStorage.getItem('allStudentsData');
+                    if (saved) {
+                        const allStudents = JSON.parse(saved);
+                        deletedCount = allStudents.length;
+                        localStorage.removeItem('allStudentsData');
                     }
                 }
 
-                alert(`✅ Se eliminaron los datos de ${deletedCount} estudiante(s) exitosamente.`);
+                if (deletedCount > 0) {
+                    alert(`✅ Se eliminaron los datos de ${deletedCount} estudiante(s) exitosamente.`);
+                } else {
+                    alert('No hay datos para eliminar.');
+                }
                 
             } catch (error) {
                 console.error('Error al limpiar datos:', error);
