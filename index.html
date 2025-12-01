@@ -207,6 +207,18 @@
             box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
         }
 
+        .btn-delete {
+            background: linear-gradient(135deg, #f44336 0%, #d32f2f 100%);
+            color: white;
+            padding: 12px 30px;
+            font-size: 14px;
+        }
+
+        .btn-delete:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4);
+        }
+
         .instruction {
             background: #e8f5e9;
             border-left: 4px solid #4caf50;
@@ -345,6 +357,12 @@
                 👩‍🏫 Generar reporte de todos los estudiantes (PDF)
             </button>
         </div>
+
+        <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
+            <button class="btn-delete" onclick="clearAllData()">
+                🗑️ Limpiar todos los datos (Solo Maestro)
+            </button>
+        </div>
     </div>
 
     <script>
@@ -365,10 +383,14 @@
         }
 
         // Establecer fecha actual por defecto
-        document.getElementById('exerciseDate').valueAsDate = new Date();
+        const today = new Date();
+        const year = today.getFullYear();
+        const month = String(today.getMonth() + 1).padStart(2, '0');
+        const day = String(today.getDate()).padStart(2, '0');
+        document.getElementById('exerciseDate').value = `${year}-${month}-${day}`;
 
         // Enviar respuesta del estudiante
-        function submitExercise() {
+        async function submitExercise() {
             const studentName = document.getElementById('studentName').value.trim();
             const exerciseDate = document.getElementById('exerciseDate').value;
             const errorsFound = document.getElementById('errorsFound').value.trim();
@@ -392,29 +414,17 @@
             };
 
             try {
-                // Obtener todos los estudiantes guardados
-                let allStudents = [];
-                const saved = localStorage.getItem('allStudentsData');
-                if (saved) {
-                    allStudents = JSON.parse(saved);
-                }
-
-                // Verificar si el estudiante ya existe y actualizar
-                const existingIndex = allStudents.findIndex(s => s.name.toLowerCase() === studentName.toLowerCase());
-                if (existingIndex !== -1) {
-                    allStudents[existingIndex] = studentData;
+                // Crear clave única para el estudiante
+                const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
+                
+                // Guardar en storage compartido (shared: true permite acceso desde cualquier dispositivo)
+                const result = await window.storage.set(storageKey, JSON.stringify(studentData), true);
+                
+                if (result) {
+                    alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
                 } else {
-                    allStudents.push(studentData);
+                    alert('⚠️ Hubo un error al enviar tu respuesta. Por favor intenta de nuevo.');
                 }
-
-                // Guardar todos los estudiantes
-                localStorage.setItem('allStudentsData', JSON.stringify(allStudents));
-                
-                alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
-                
-                // Limpiar los campos
-                document.getElementById('studentName').value = '';
-                document.getElementById('errorsFound').value = '';
                 
             } catch (error) {
                 console.error('Error al guardar:', error);
@@ -423,7 +433,7 @@
         }
 
         // Generar PDF del estudiante
-        function generateStudentPDF() {
+        async function generateStudentPDF() {
             const { jsPDF } = window.jspdf;
             const studentName = document.getElementById('studentName').value.trim();
 
@@ -433,21 +443,16 @@
             }
 
             try {
-                // Buscar los datos del estudiante
-                const saved = localStorage.getItem('allStudentsData');
-                if (!saved) {
-                    alert('⚠️ No se encontraron datos. Primero debes enviar tu respuesta.');
-                    return;
-                }
-
-                const allStudents = JSON.parse(saved);
-                const studentData = allStudents.find(s => s.name.toLowerCase() === studentName.toLowerCase());
+                // Buscar los datos del estudiante en storage compartido
+                const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
+                const result = await window.storage.get(storageKey, true);
                 
-                if (!studentData) {
+                if (!result || !result.value) {
                     alert('⚠️ No se encontraron datos para este estudiante. Primero debes enviar tu respuesta.');
                     return;
                 }
 
+                const studentData = JSON.parse(result.value);
                 const exerciseDate = studentData.date;
                 const errorsFound = studentData.errors;
 
@@ -503,7 +508,7 @@
         }
 
         // Generar PDF del maestro con todos los estudiantes
-        function generateTeacherPDF() {
+        async function generateTeacherPDF() {
             // Solicitar PIN
             const pin = prompt('🔒 Ingresa el PIN de maestro para acceder al reporte:');
             
@@ -513,15 +518,26 @@
             }
 
             try {
-                // Obtener todos los estudiantes
-                const saved = localStorage.getItem('allStudentsData');
+                // Obtener lista de todos los estudiantes del storage compartido
+                const result = await window.storage.list('student_', true);
                 
-                if (!saved) {
+                if (!result || !result.keys || result.keys.length === 0) {
                     alert('No hay estudiantes registrados aún.');
                     return;
                 }
 
-                const allStudents = JSON.parse(saved);
+                // Cargar datos de todos los estudiantes
+                const allStudents = [];
+                for (const key of result.keys) {
+                    try {
+                        const studentResult = await window.storage.get(key, true);
+                        if (studentResult && studentResult.value) {
+                            allStudents.push(JSON.parse(studentResult.value));
+                        }
+                    } catch (e) {
+                        console.error('Error cargando estudiante:', e);
+                    }
+                }
 
                 if (allStudents.length === 0) {
                     alert('No hay estudiantes registrados aún.');
@@ -594,6 +610,50 @@
             } catch (error) {
                 console.error('Error al generar reporte:', error);
                 alert('⚠️ Hubo un error al generar el reporte. Por favor intenta de nuevo.');
+            }
+        }
+
+        // Limpiar todos los datos almacenados (solo para maestro)
+        async function clearAllData() {
+            // Solicitar PIN
+            const pin = prompt('🔒 Ingresa el PIN de maestro para limpiar todos los datos:');
+            
+            if (pin !== '1070') {
+                alert('❌ PIN incorrecto. Acceso denegado.');
+                return;
+            }
+
+            const confirm = window.confirm('⚠️ ¿Estás seguro de que deseas eliminar TODOS los datos de los estudiantes?\n\nEsta acción no se puede deshacer.');
+            
+            if (!confirm) {
+                return;
+            }
+
+            try {
+                // Obtener lista de todos los estudiantes
+                const result = await window.storage.list('student_', true);
+                
+                if (!result || !result.keys || result.keys.length === 0) {
+                    alert('No hay datos para eliminar.');
+                    return;
+                }
+
+                // Eliminar cada estudiante
+                let deletedCount = 0;
+                for (const key of result.keys) {
+                    try {
+                        await window.storage.delete(key, true);
+                        deletedCount++;
+                    } catch (e) {
+                        console.error('Error eliminando:', e);
+                    }
+                }
+
+                alert(`✅ Se eliminaron los datos de ${deletedCount} estudiante(s) exitosamente.`);
+                
+            } catch (error) {
+                console.error('Error al limpiar datos:', error);
+                alert('⚠️ Hubo un error al limpiar los datos. Por favor intenta de nuevo.');
             }
         }
     </script>
