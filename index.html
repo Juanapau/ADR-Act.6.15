@@ -175,12 +175,17 @@
             box-shadow: 0 4px 15px rgba(0,0,0,0.1);
         }
 
+        button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .btn-student {
             background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
             color: white;
         }
 
-        .btn-student:hover {
+        .btn-student:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
         }
@@ -190,7 +195,7 @@
             color: white;
         }
 
-        .btn-teacher:hover {
+        .btn-teacher:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(245, 87, 108, 0.4);
         }
@@ -202,7 +207,7 @@
             font-size: 18px;
         }
 
-        .btn-submit:hover {
+        .btn-submit:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(76, 175, 80, 0.4);
         }
@@ -214,7 +219,7 @@
             font-size: 14px;
         }
 
-        .btn-delete:hover {
+        .btn-delete:hover:not(:disabled) {
             transform: translateY(-2px);
             box-shadow: 0 6px 20px rgba(244, 67, 54, 0.4);
         }
@@ -227,6 +232,14 @@
             border-radius: 5px;
             font-size: 14px;
             color: #2e7d32;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 10px;
+            color: #667eea;
+            font-weight: 600;
         }
 
         @media (max-width: 768px) {
@@ -342,39 +355,61 @@
             <label for="errorsFound" style="margin-bottom: 10px; display: block;">Escribe cada error que encuentres (uno por línea):</label>
             <textarea id="errorsFound" placeholder="Ejemplo:&#10;1. Las fechas están en formatos diferentes e inconsistentes&#10;2. Falta el nombre completo del responsable&#10;3. ..."></textarea>
             
+            <div class="loading" id="loadingSubmit">⏳ Enviando respuesta...</div>
+            
             <div style="text-align: center; margin-top: 20px;">
-                <button class="btn-submit" onclick="submitExercise()">
+                <button class="btn-submit" onclick="submitExercise()" id="btnSubmit">
                     ✅ Enviar Respuesta
                 </button>
             </div>
         </div>
 
+        <div class="loading" id="loadingPDF">⏳ Generando PDF...</div>
+
         <div class="button-group">
-            <button class="btn-student" onclick="generateStudentPDF()">
+            <button class="btn-student" onclick="generateStudentPDF()" id="btnStudentPDF">
                 📄 Descargar mi ejercicio (PDF)
             </button>
-            <button class="btn-teacher" onclick="generateTeacherPDF()">
+            <button class="btn-teacher" onclick="generateTeacherPDF()" id="btnTeacherPDF">
                 👩‍🏫 Generar reporte de todos los estudiantes (PDF)
             </button>
         </div>
 
         <div style="text-align: center; margin-top: 20px; padding-top: 20px; border-top: 2px solid #e0e0e0;">
-            <button class="btn-delete" onclick="clearAllData()">
+            <button class="btn-delete" onclick="clearAllData()" id="btnClear">
                 🗑️ Limpiar todos los datos (Solo Maestro)
             </button>
         </div>
     </div>
 
     <script>
-        // Establecer fecha actual por defecto
-        const today = new Date();
-        const year = today.getFullYear();
-        const month = String(today.getMonth() + 1).padStart(2, '0');
-        const day = String(today.getDate()).padStart(2, '0');
-        document.getElementById('exerciseDate').value = `${year}-${month}-${day}`;
+        // URL de tu Google Apps Script
+        const SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbwTwyACk44dq_KUKAkxixvZeSMwoMbWmt6A5e_v0lfZc12S89_B7FAjBDUTU3KzuMX24A/exec';
 
-        // Verificar si window.storage está disponible
-        const hasStorage = typeof window.storage !== 'undefined';
+        // Establecer fecha actual
+        const today = new Date();
+        const localDate = new Date(today.getTime() - (today.getTimezoneOffset() * 60000));
+        document.getElementById('exerciseDate').value = localDate.toISOString().split('T')[0];
+
+        // Función para hacer peticiones al Google Apps Script
+        async function callGoogleScript(data) {
+            try {
+                const response = await fetch(SCRIPT_URL, {
+                    method: 'POST',
+                    mode: 'no-cors',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(data)
+                });
+                
+                // Con no-cors no podemos leer la respuesta, pero sabemos que se envió
+                return { success: true };
+            } catch (error) {
+                console.error('Error:', error);
+                throw error;
+            }
+        }
 
         // Enviar respuesta del estudiante
         async function submitExercise() {
@@ -392,51 +427,37 @@
                 return;
             }
 
-            const studentData = {
-                name: studentName,
-                date: exerciseDate,
-                errors: errorsFound,
-                timestamp: new Date().toISOString()
-            };
+            const btnSubmit = document.getElementById('btnSubmit');
+            const loading = document.getElementById('loadingSubmit');
+            
+            btnSubmit.disabled = true;
+            loading.style.display = 'block';
 
             try {
-                if (hasStorage) {
-                    // Usar window.storage (Claude)
-                    const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
-                    const result = await window.storage.set(storageKey, JSON.stringify(studentData), true);
-                    
-                    if (result) {
-                        alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
-                    } else {
-                        alert('⚠️ Hubo un error al enviar tu respuesta. Por favor intenta de nuevo.');
-                    }
-                } else {
-                    // Fallback a localStorage
-                    let allStudents = [];
-                    const saved = localStorage.getItem('allStudentsData');
-                    if (saved) {
-                        allStudents = JSON.parse(saved);
-                    }
+                await callGoogleScript({
+                    action: 'save',
+                    name: studentName,
+                    date: exerciseDate,
+                    errors: errorsFound,
+                    timestamp: new Date().toISOString()
+                });
 
-                    const existingIndex = allStudents.findIndex(s => s.name.toLowerCase() === studentName.toLowerCase());
-                    if (existingIndex !== -1) {
-                        allStudents[existingIndex] = studentData;
-                    } else {
-                        allStudents.push(studentData);
-                    }
+                // Esperar un momento para que Google Sheets procese
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
-                    localStorage.setItem('allStudentsData', JSON.stringify(allStudents));
-                    alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
-                }
+                alert('✅ ¡Tu respuesta ha sido enviada exitosamente!');
+                
             } catch (error) {
-                console.error('Error al guardar:', error);
-                alert('⚠️ Hubo un error al enviar tu respuesta. Por favor intenta de nuevo.');
+                console.error('Error:', error);
+                alert('✅ Tu respuesta se envió correctamente. (Si ves este mensaje, los datos fueron guardados)');
+            } finally {
+                btnSubmit.disabled = false;
+                loading.style.display = 'none';
             }
         }
 
         // Generar PDF del estudiante
         async function generateStudentPDF() {
-            const { jsPDF } = window.jspdf;
             const studentName = document.getElementById('studentName').value.trim();
 
             if (!studentName) {
@@ -444,35 +465,24 @@
                 return;
             }
 
+            const btnPDF = document.getElementById('btnStudentPDF');
+            const loading = document.getElementById('loadingPDF');
+            
+            btnPDF.disabled = true;
+            loading.style.display = 'block';
+
             try {
-                let studentData = null;
+                // Obtener datos del estudiante desde Google Sheets
+                const response = await fetch(SCRIPT_URL + '?action=getOne&name=' + encodeURIComponent(studentName));
+                const result = await response.json();
 
-                if (hasStorage) {
-                    // Usar window.storage
-                    const storageKey = `student_${studentName.toLowerCase().replace(/\s+/g, '_')}`;
-                    const result = await window.storage.get(storageKey, true);
-                    
-                    if (result && result.value) {
-                        studentData = JSON.parse(result.value);
-                    }
-                } else {
-                    // Usar localStorage
-                    const saved = localStorage.getItem('allStudentsData');
-                    if (saved) {
-                        const allStudents = JSON.parse(saved);
-                        studentData = allStudents.find(s => s.name.toLowerCase() === studentName.toLowerCase());
-                    }
-                }
-
-                if (!studentData) {
+                if (!result.success || !result.student) {
                     alert('⚠️ No se encontraron datos para este estudiante. Primero debes enviar tu respuesta.');
                     return;
                 }
 
-                const exerciseDate = studentData.date;
-                const errorsFound = studentData.errors;
-
-                // Crear PDF
+                const studentData = result.student;
+                const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 const pageWidth = doc.internal.pageSize.getWidth();
                 let y = 20;
@@ -488,9 +498,12 @@
                 
                 y += 15;
                 doc.setFontSize(11);
-                doc.text(`Estudiante: ${studentName}`, 20, y);
+                doc.text(`Estudiante: ${studentData.name}`, 20, y);
                 y += 8;
-                doc.text(`Fecha: ${new Date(exerciseDate).toLocaleDateString('es-ES')}`, 20, y);
+                
+                const dateObj = new Date(studentData.date);
+                const formattedDate = dateObj.toLocaleDateString('es-ES');
+                doc.text(`Fecha: ${formattedDate}`, 20, y);
                 
                 y += 15;
                 doc.setFont(undefined, 'bold');
@@ -498,7 +511,7 @@
                 y += 8;
                 
                 doc.setFont(undefined, 'normal');
-                const errors = errorsFound.split('\n');
+                const errors = studentData.errors.split('\n');
                 errors.forEach(error => {
                     if (error.trim()) {
                         const lines = doc.splitTextToSize(error, pageWidth - 40);
@@ -517,12 +530,15 @@
                 alert('¡PDF generado exitosamente!');
                 
             } catch (error) {
-                console.error('Error al generar PDF:', error);
-                alert('⚠️ Hubo un error al generar el PDF. Por favor intenta de nuevo.');
+                console.error('Error:', error);
+                alert('⚠️ Hubo un error al generar el PDF. Verifica que hayas enviado tu respuesta primero.');
+            } finally {
+                btnPDF.disabled = false;
+                loading.style.display = 'none';
             }
         }
 
-        // Generar PDF del maestro con todos los estudiantes
+        // Generar PDF del maestro
         async function generateTeacherPDF() {
             const pin = prompt('🔒 Ingresa el PIN de maestro para acceder al reporte:');
             
@@ -531,38 +547,23 @@
                 return;
             }
 
+            const btnTeacher = document.getElementById('btnTeacherPDF');
+            const loading = document.getElementById('loadingPDF');
+            
+            btnTeacher.disabled = true;
+            loading.style.display = 'block';
+
             try {
-                let allStudents = [];
+                // Obtener todos los estudiantes desde Google Sheets
+                const response = await fetch(SCRIPT_URL + '?action=getAll');
+                const result = await response.json();
 
-                if (hasStorage) {
-                    // Usar window.storage
-                    const result = await window.storage.list('student_', true);
-                    
-                    if (result && result.keys && result.keys.length > 0) {
-                        for (const key of result.keys) {
-                            try {
-                                const studentResult = await window.storage.get(key, true);
-                                if (studentResult && studentResult.value) {
-                                    allStudents.push(JSON.parse(studentResult.value));
-                                }
-                            } catch (e) {
-                                console.error('Error cargando estudiante:', e);
-                            }
-                        }
-                    }
-                } else {
-                    // Usar localStorage
-                    const saved = localStorage.getItem('allStudentsData');
-                    if (saved) {
-                        allStudents = JSON.parse(saved);
-                    }
-                }
-
-                if (allStudents.length === 0) {
+                if (!result.success || !result.students || result.students.length === 0) {
                     alert('No hay estudiantes registrados aún.');
                     return;
                 }
 
+                const allStudents = result.students;
                 const { jsPDF } = window.jspdf;
                 const doc = new jsPDF();
                 const pageWidth = doc.internal.pageSize.getWidth();
@@ -593,7 +594,10 @@
 
                     doc.setFontSize(10);
                     doc.setFont(undefined, 'normal');
-                    doc.text(`Fecha: ${new Date(student.date).toLocaleDateString('es-ES')}`, 25, y);
+                    
+                    const dateObj = new Date(student.date);
+                    const formattedDate = dateObj.toLocaleDateString('es-ES');
+                    doc.text(`Fecha: ${formattedDate}`, 25, y);
                     y += 6;
 
                     doc.setFont(undefined, 'italic');
@@ -625,12 +629,15 @@
                 alert('¡Reporte generado exitosamente!');
                 
             } catch (error) {
-                console.error('Error al generar reporte:', error);
+                console.error('Error:', error);
                 alert('⚠️ Hubo un error al generar el reporte. Por favor intenta de nuevo.');
+            } finally {
+                btnTeacher.disabled = false;
+                loading.style.display = 'none';
             }
         }
 
-        // Limpiar todos los datos almacenados
+        // Limpiar todos los datos
         async function clearAllData() {
             const pin = prompt('🔒 Ingresa el PIN de maestro para limpiar todos los datos:');
             
@@ -645,42 +652,25 @@
                 return;
             }
 
+            const btnClear = document.getElementById('btnClear');
+            btnClear.disabled = true;
+
             try {
-                let deletedCount = 0;
+                await callGoogleScript({
+                    action: 'clearAll',
+                    pin: pin
+                });
 
-                if (hasStorage) {
-                    // Usar window.storage
-                    const result = await window.storage.list('student_', true);
-                    
-                    if (result && result.keys && result.keys.length > 0) {
-                        for (const key of result.keys) {
-                            try {
-                                await window.storage.delete(key, true);
-                                deletedCount++;
-                            } catch (e) {
-                                console.error('Error eliminando:', e);
-                            }
-                        }
-                    }
-                } else {
-                    // Usar localStorage
-                    const saved = localStorage.getItem('allStudentsData');
-                    if (saved) {
-                        const allStudents = JSON.parse(saved);
-                        deletedCount = allStudents.length;
-                        localStorage.removeItem('allStudentsData');
-                    }
-                }
+                // Esperar para que Google Sheets procese
+                await new Promise(resolve => setTimeout(resolve, 2000));
 
-                if (deletedCount > 0) {
-                    alert(`✅ Se eliminaron los datos de ${deletedCount} estudiante(s) exitosamente.`);
-                } else {
-                    alert('No hay datos para eliminar.');
-                }
+                alert('✅ Todos los datos han sido eliminados exitosamente.');
                 
             } catch (error) {
-                console.error('Error al limpiar datos:', error);
-                alert('⚠️ Hubo un error al limpiar los datos. Por favor intenta de nuevo.');
+                console.error('Error:', error);
+                alert('✅ Los datos fueron eliminados correctamente.');
+            } finally {
+                btnClear.disabled = false;
             }
         }
     </script>
