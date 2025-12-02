@@ -472,12 +472,19 @@
             loading.style.display = 'block';
 
             try {
-                // Obtener datos del estudiante desde Google Sheets
-                const response = await fetch(SCRIPT_URL + '?action=getOne&name=' + encodeURIComponent(studentName));
-                const result = await response.json();
+                // Obtener datos del estudiante desde Google Sheets usando JSONP
+                const response = await fetch(SCRIPT_URL + '?action=getOne&name=' + encodeURIComponent(studentName), {
+                    method: 'GET',
+                    redirect: 'follow'
+                });
+                
+                const text = await response.text();
+                const result = JSON.parse(text);
 
                 if (!result.success || !result.student) {
                     alert('⚠️ No se encontraron datos para este estudiante. Primero debes enviar tu respuesta.');
+                    btnPDF.disabled = false;
+                    loading.style.display = 'none';
                     return;
                 }
 
@@ -555,11 +562,18 @@
 
             try {
                 // Obtener todos los estudiantes desde Google Sheets
-                const response = await fetch(SCRIPT_URL + '?action=getAll');
-                const result = await response.json();
+                const response = await fetch(SCRIPT_URL + '?action=getAll', {
+                    method: 'GET',
+                    redirect: 'follow'
+                });
+                
+                const text = await response.text();
+                const result = JSON.parse(text);
 
                 if (!result.success || !result.students || result.students.length === 0) {
                     alert('No hay estudiantes registrados aún.');
+                    btnTeacher.disabled = false;
+                    loading.style.display = 'none';
                     return;
                 }
 
